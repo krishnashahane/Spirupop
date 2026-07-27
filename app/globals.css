@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --chartreuse: #ccff00;
+  --mauve: #e0afff;
+  --aqua: #00fff0;
+  --ink: #0a0a0a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-chartreuse: var(--chartreuse);
+  --color-mauve: var(--mauve);
+  --color-aqua: var(--aqua);
+  --color-ink: var(--ink);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-display);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Prevent iOS Safari auto-zoom on input focus (fires when font-size < 16px). */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--mauve);
+  color: #111111;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.015em;
+  font-optical-sizing: auto;
+}
+
+.font-cursive {
+  font-family: var(--font-cursive), "Brush Script MT", cursive;
+}
+
+/* Premium pill button — subtle lift + sheen on hover */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px -10px rgba(224, 175, 255, 0.7);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 22s linear infinite;
+}
+
+.animate-marquee-slow {
+  animation: marquee 48s linear infinite;
+}
+
+.aqua-highlight {
+  background: linear-gradient(transparent 60%, rgba(0, 255, 240, 0.18) 60%);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Subtle glitter border for review cards */
+.review-glitter {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.review-glitter::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  margin: -1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    rgba(196, 181, 253, 0.45),
+    rgba(255, 255, 255, 0.85) 20%,
+    rgba(153, 246, 228, 0.45) 40%,
+    rgba(255, 255, 255, 0.85) 60%,
+    rgba(196, 181, 253, 0.45) 80%,
+    rgba(255, 255, 255, 0.85)
+  );
+  background-size: 300% 100%;
+  animation: glitter 6s linear infinite;
+}
+@keyframes glitter {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 300% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-glitter::before {
+    animation: none;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(1deg);
+  }
+}
+
+.animate-floaty {
+  animation: floaty 7s ease-in-out infinite;
+}
+
+@keyframes spinSlow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spinSlow 28s linear infinite;
+}
+
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes orbitReverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+.animate-orbit {
+  animation: orbit 32s linear infinite;
+}
+.animate-orbit-reverse {
+  animation: orbitReverse 32s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee,
+  .animate-marquee-slow,
+  .animate-floaty,
+  .animate-spin-slow,
+  .animate-orbit,
+  .animate-orbit-reverse {
+    animation: none !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.8s ease both;
+}
+
+.policy h2 {
+  font-family: var(--font-display), var(--font-sans), sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--ink);
+  margin-top: 2rem;
+}
+
+.policy h3 {
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 1.5rem;
+}
+
+.policy ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+
+.policy ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+
+.policy li {
+  margin-top: 0.4rem;
+}
+
+.policy strong {
+  color: var(--ink);
+}
+
+.policy a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
