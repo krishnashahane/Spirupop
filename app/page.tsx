@@ -3,6 +3,7 @@ import Image from "next/image";
 import Reveal from "@/components/Reveal";
 import IngredientTicker from "@/components/IngredientTicker";
 import PricingTiers from "@/components/PricingTiers";
+import AutoVideo from "@/components/AutoVideo";
 
 const PILLARS = [
   { title: "Hair Longevity & Volume", img: "/pillar-hair.png" },
@@ -16,14 +17,9 @@ export default function Home() {
       {/* SECTION 1 — HERO */}
       <section className="relative min-h-[92vh] w-full overflow-hidden">
         {/* Full-bleed hero video */}
-        <video
+        <AutoVideo
           className="absolute inset-0 h-full w-full object-cover"
           src="/home-hero.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
         />
         {/* Legibility scrim */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
@@ -209,14 +205,9 @@ export default function Home() {
 
       {/* SECTION 5 — RAW SYNERGY */}
       <section className="relative overflow-hidden">
-        <video
+        <AutoVideo
           className="absolute inset-0 h-full w-full object-cover"
           src="/raw-potency.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
         />
         {/* Legibility scrim */}
         <div className="absolute inset-0 bg-black/55" />
@@ -245,14 +236,9 @@ export default function Home() {
 
       {/* SECTION 7 — FULFILLMENT INTEGRITY */}
       <section className="relative overflow-hidden">
-        <video
+        <AutoVideo
           className="absolute inset-0 h-full w-full object-cover"
           src="/dispatch-premium.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
         />
         {/* Legibility scrim */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/45 to-transparent" />

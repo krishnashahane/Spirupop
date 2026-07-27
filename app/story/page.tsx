@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import Reveal from "@/components/Reveal";
+import AutoVideo from "@/components/AutoVideo";
 
 export const metadata: Metadata = {
   title: "Our Story",
@@ -130,14 +131,9 @@ export default function StoryPage() {
       {/* WHOLE-FOOD SYNERGY — editorial showcase */}
       {/* INGREDIENT REVEAL — full-bleed video */}
       <section className="relative flex min-h-[78vh] items-center justify-center overflow-hidden">
-        <video
+        <AutoVideo
           className="absolute inset-0 h-full w-full object-cover"
           src="/botanicals-capsule.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
         />
         {/* legibility scrim */}
         <div className="absolute inset-0 bg-black/55" />
