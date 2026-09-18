@@ -5,10 +5,10 @@ export const ADMIN_COOKIE = "sp_admin";
 
 export const adminCookieOptions = {
   httpOnly: true,
-  secure: true,
+  secure: process.env.NODE_ENV === "production",
   sameSite: "strict" as const,
   path: "/",
-  maxAge: 60 * 60 * 24 * 7, // 7 days
+  maxAge: 60 * 60 * 24 * 7,
 };
 
 function pw(): string {
@@ -17,8 +17,6 @@ function pw(): string {
   return p;
 }
 
-// The cookie stores an HMAC of a constant keyed by the password — proves
-// knowledge of the password without ever storing it in the cookie.
 export function adminToken(): string {
   return crypto.createHmac("sha256", pw()).update("sp-admin-v1").digest("hex");
 }

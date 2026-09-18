@@ -2,13 +2,13 @@ import { NextResponse, after } from "next/server";
 import { ensureSchema, sqlClient } from "@/lib/db";
 import { tierById } from "@/lib/tiers";
 import { sendOrderAlert } from "@/lib/notify";
+import { SITE_ORIGIN, normalizeOrigin } from "@/lib/site";
 
 export const runtime = "nodejs";
 
 const PHONE = /^[6-9]\d{9}$/;
 const PIN = /^\d{6}$/;
 
-// Drop control characters; cap length to keep payloads sane.
 function clean(v: unknown, max: number): string {
   const s = String(v ?? "");
   let out = "";
@@ -22,6 +22,18 @@ function clean(v: unknown, max: number): string {
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") || "";
   return xff.split(",")[0].trim() || "unknown";
+}
+
+/**
+ * Prefer the browser Origin because it is the real public site origin.
+ * Fall back to the configured site origin when a proxy/client omits Origin.
+ */
+function requestSiteOrigin(req: Request): string {
+  return (
+    normalizeOrigin(req.headers.get("origin")) ||
+    normalizeOrigin(req.headers.get("referer")) ||
+    SITE_ORIGIN
+  );
 }
 
 export async function POST(req: Request) {
@@ -41,10 +53,24 @@ async function handle(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 415 });
   }
 
+  if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+    console.error(
+      "order configuration error: DATABASE_URL or POSTGRES_URL is missing"
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Checkout is not configured on this deployment. Set DATABASE_URL or POSTGRES_URL.",
+      },
+      { status: 503 }
+    );
+  }
+
   const raw = await req.text();
   if (raw.length > 4000) {
     return NextResponse.json({ error: "Payload too large." }, { status: 413 });
   }
+
   let body: Record<string, unknown>;
   try {
     body = JSON.parse(raw);
@@ -82,13 +108,13 @@ async function handle(req: Request) {
   const sql = sqlClient();
   const ip = clientIp(req);
 
-  // Rate limit: cap orders per phone and per IP within the last hour.
   const [byPhone, byIp] = await Promise.all([
     sql`SELECT count(*)::int AS n FROM sp_orders
         WHERE phone = ${phone} AND created_at > now() - interval '1 hour'`,
     sql`SELECT count(*)::int AS n FROM sp_orders
         WHERE ip = ${ip} AND created_at > now() - interval '1 hour'`,
   ]);
+
   if ((byPhone[0]?.n ?? 0) >= 8 || (byIp[0]?.n ?? 0) >= 20) {
     return NextResponse.json(
       { error: "Too many attempts. Please try again later." },
@@ -100,6 +126,7 @@ async function handle(req: Request) {
     INSERT INTO sp_users (phone, name) VALUES (${phone}, ${name})
     ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
     RETURNING id`;
+
   const uid = Number(users[0].id);
 
   const rows = await sql`
@@ -111,23 +138,25 @@ async function handle(req: Request) {
     RETURNING id`;
 
   const orderId = Number(rows[0].id);
+  const siteOrigin = requestSiteOrigin(req);
 
-  // Notify the owner after the response is sent — keeps checkout instant.
   after(() =>
-    sendOrderAlert({
-      orderId,
-      title: tier.title,
-      amount: tier.price,
-      name,
-      phone,
-      address,
-      city,
-      state,
-      pincode,
-    })
+    sendOrderAlert(
+      {
+        orderId,
+        title: tier.title,
+        amount: tier.price,
+        name,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+      },
+      siteOrigin
+    )
   );
 
-  // amount comes from the server-side tier table, never the client.
   return NextResponse.json({
     ok: true,
     orderId,

@@ -12,6 +12,7 @@ import OfferBar from "@/components/OfferBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import { SITE_ORIGIN } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,7 +52,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://spirupop.com"),
+  metadataBase: new URL(SITE_ORIGIN),
   title: {
     default:
       "SpiruPop — The Science of Longevity. The Luxury of Pure Nutrition.",
@@ -75,7 +76,7 @@ export const metadata: Metadata = {
     title: "SpiruPop — The Science of Longevity",
     description:
       "12 bio-active botanicals. Two capsules daily. Restore hair, skin & nails from the cellular level.",
-    url: "https://spirupop.com",
+    url: SITE_ORIGIN,
     siteName: "SpiruPop",
     type: "website",
   },

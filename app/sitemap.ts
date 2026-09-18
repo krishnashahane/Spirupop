@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const BASE = "https://spirupop.com";
+import { SITE_ORIGIN } from "@/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
@@ -18,9 +17,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/policies/refund",
     "/policies/disclaimer",
   ].map((r) => ({
-    url: `${BASE}${r}`,
+    url: `${SITE_ORIGIN}${r}`,
     lastModified: now,
-    changeFrequency: (r === "" ? "weekly" : "monthly") as "weekly" | "monthly",
+    changeFrequency: (r === "" ? "weekly" : "monthly") as
+      | "weekly"
+      | "monthly",
     priority: r === "" ? 1 : 0.6,
   }));
 }
