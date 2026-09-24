@@ -78,25 +78,45 @@ export default function CheckoutModal({
       return;
     }
     setLoading(true);
-    let data: Record<string, unknown> = {};
-    let ok = false;
+
+    // Payment itself is a direct UPI intent and must never be blocked by an
+    // optional order-storage/notification service. Try the server endpoint
+    // first so deployments with the optional order backend still get a real
+    // server-side reference; if that service is unavailable, continue with a
+    // local reference and take the customer directly to payment.
+    let amount = tier.price;
+    let orderRef = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     try {
       const res = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tierId: tier.id, ...form }),
       });
-      data = await res.json().catch(() => ({}));
-      ok = res.ok;
-    } catch {
-      setLoading(false);
-      setError("Network error. Please try again.");
-      return;
+
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.ok) {
+        const serverAmount = Number(data.amount);
+        if (Number.isFinite(serverAmount) && serverAmount > 0) {
+          amount = serverAmount;
+        }
+        if (data.orderId != null) {
+          orderRef = String(data.orderId);
+        }
+      } else {
+        console.warn("Optional order API unavailable; continuing to UPI payment.", {
+          status: res.status,
+        });
+      }
+    } catch (e) {
+      console.warn(
+        "Optional order API unreachable; continuing to UPI payment.",
+        e
+      );
     }
+
     setLoading(false);
-    if (!ok) return setError(String(data.error || "Could not place order."));
-    const amount = Number(data.amount) || tier.price;
-    setOrder({ amount, note: `SpiruPop ${tier.title} #${String(data.orderId)}` });
+    setOrder({ amount, note: `SpiruPop ${tier.title} #${orderRef}` });
     setStep("pay");
   };
 
