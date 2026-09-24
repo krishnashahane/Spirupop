@@ -1,51 +1,66 @@
-# SpiruPop Production Deployment
+# SpiruPop Deployment
 
-## 1. Requirements
+## Zero-configuration public checkout
 
-- Node.js compatible with the project's Next.js version
-- A PostgreSQL-compatible database (Neon is supported)
-- A deployment platform that supports Next.js App Router server routes
+The public website and direct UPI checkout do **not** require:
+- a payment-provider API key
+- Razorpay/Stripe configuration
+- PostgreSQL credentials
+- CORS configuration
+- domain-specific source-code edits
 
-## 2. Install and build
+Deploy the repository as a normal Next.js application.
+
+## Build
 
 ```bash
 npm ci
 npm run lint
 npm run build
+npm start
 ```
 
-## 3. Required environment variables
+## Environment variables
 
-Set these in the hosting provider's production environment:
+No environment variables are required for the public checkout.
+
+Optional:
 
 ```text
-DATABASE_URL=<your PostgreSQL connection string>
-ADMIN_PASSWORD=<strong admin password>
-SITE_ORIGIN=https://spirupop.com
+SITE_ORIGIN=https://your-production-domain.example
 ```
 
-Use `https://www.spirupop.com` instead when that is the canonical hostname.
+Set SITE_ORIGIN only when you want a specific canonical hostname for metadata/sitemap/robots.
 
-`POSTGRES_URL` is also supported as the database variable.
+## Payment
 
-## 4. Optional environment variables
+Checkout uses direct UPI intents configured in `lib/upi.ts`.
+
+The payment flow is:
+
+1. Customer chooses a tier.
+2. Checkout validates the delivery details.
+3. `POST /api/order` validates the request.
+4. The server returns an order reference and exact server-side tier price.
+5. The customer immediately reaches the UPI payment screen.
+6. UPI app buttons and the merchant QR work without database or payment-gateway credentials.
+
+Notification delivery is best-effort and never blocks the customer from reaching payment.
+
+## Optional order dashboard
+
+The `/admin` dashboard uses PostgreSQL.
+
+Configure:
 
 ```text
-ORDER_ALERT_EMAIL=<order notification inbox>
-WHATSAPP_TO=<recipient phone in international digits>
-WHATSAPP_TOKEN=<Meta token>
-WHATSAPP_PHONE_ID=<Meta WhatsApp phone ID>
+DATABASE_URL=<PostgreSQL connection string>
+ADMIN_PASSWORD=<strong password>
 ```
 
-The checkout does not require a payment API secret. The payment step uses the public UPI VPA configured in `lib/upi.ts`.
+Without these optional values, public checkout still works. The database is not part of the payment-critical path.
 
-## 5. Database
-
-The first successful order request creates the `sp_users` and `sp_orders` tables and required indexes if they do not already exist.
-
-The same database must be used by the deployment that needs to view orders in `/admin`.
-
-## 6. Verify the deployment
+## Health check
 
 Open:
 
@@ -53,54 +68,17 @@ Open:
 https://YOUR-DOMAIN/api/health
 ```
 
-Expected result:
+A healthy public checkout deployment reports `ok: true` and `checks.checkout: true`.
 
-```json
-{
-  "ok": true,
-  "checks": {
-    "database": true,
-    "admin": true
-  }
-}
-```
+## Domain portability
 
-Then test:
+The source code contains no payment-critical dependency on:
+- spirupop.vercel.app
+- spirupop.com
+- localhost
 
-1. Home page loads.
-2. Pricing → Buy Now opens checkout.
-3. Enter valid customer details.
-4. Continue to Pay returns the UPI payment step.
-5. UPI buttons open the selected app where supported.
-6. Desktop QR is displayed.
-7. The order appears in `/admin`.
-8. Order alerts arrive when optional alert configuration is enabled.
+Browser API calls are same-origin. Server-side notification URLs derive the request origin where available.
 
-## 7. Domain portability
+## External configuration
 
-The application does not hardcode `spirupop.vercel.app` for runtime API or checkout behavior.
-
-Browser API calls use same-origin relative URLs such as `/api/order`.
-
-Absolute public URLs are controlled by `SITE_ORIGIN` and default to `https://spirupop.com`.
-
-## 8. External configuration source code cannot control
-
-GitHub source code cannot automatically create or configure:
-
-- DNS records for the production domain
-- hosting-provider environment variables
-- PostgreSQL credentials
-- FormSubmit recipient activation
-- Meta WhatsApp credentials
-- the domain's TLS certificate
-
-Those must be configured in the relevant service/account.
-
-## 9. Important payment note
-
-This project uses direct UPI intent links, not Razorpay/Stripe card checkout.
-
-No card number, CVV, bank password, or payment-gateway secret is collected by the site.
-
-The public merchant VPA is defined in `lib/upi.ts`.
+DNS, HTTPS/TLS, and optional database/admin settings are controlled by the deployment provider. They are not required for the public UPI checkout.
