@@ -5,12 +5,13 @@
 //   Includes S.browser_fallback_url so an uninstalled app goes to Play Store.
 //
 // iOS:
-//   Uses the app-specific UPI schemes documented by major payment integrators
-//   where available. For super.money and FamApp, schemes are community-sourced.
-//   Safari does not expose a supported "is this app installed?" API, so an
-//   iOS custom-scheme launch may show Safari's native invalid-address dialog
-//   when the app is absent; a timed App Store fallback is still provided.
-//   This is an iOS platform limitation, not a domain/deployment issue.
+//   Uses documented UPI schemes for Google Pay, PhonePe and Paytm.
+//   FamApp, super.money and WhatsApp Pay are sent to their official App Store
+//   listing on iOS because a verified web-to-payment scheme is not available in
+//   the sources used for this build. Android package-targeted payment intents
+//   remain enabled for all six apps.
+//   Safari does not expose a supported general-purpose "is this app installed?"
+//   API for arbitrary third-party apps.
 //
 // The merchant VPA is public by design and contains no secret.
 
@@ -23,6 +24,9 @@ export type UpiApp = {
   pkg: string;
   iosScheme?: string;
   iosId: string;
+  // iOS direct payment is enabled only for schemes documented by the app/payment
+  // provider. Android package targeting remains available for every listed app.
+  iosDirectPayment: boolean;
 };
 
 export const UPI_APPS: UpiApp[] = [
@@ -32,6 +36,7 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "com.google.android.apps.nbu.paisa.user",
     iosScheme: "gpay://upi/pay",
     iosId: "1193357041",
+    iosDirectPayment: true,
   },
   {
     name: "PhonePe",
@@ -39,6 +44,7 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "com.phonepe.app",
     iosScheme: "phonepe://upi/pay",
     iosId: "1170055821",
+    iosDirectPayment: true,
   },
   {
     name: "Paytm",
@@ -46,27 +52,28 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "net.one97.paytm",
     iosScheme: "paytm://upi/pay",
     iosId: "473941634",
+    iosDirectPayment: true,
   },
   {
     name: "FamApp",
     logo: "/logos/fampay.svg",
     pkg: "com.fampay.in",
-    iosScheme: "in.fampay.app://",
     iosId: "1499806454",
+    iosDirectPayment: false,
   },
   {
     name: "super.money",
     logo: "/logos/supermoney.svg",
     pkg: "money.super.payments",
-    iosScheme: "super://",
     iosId: "6502597504",
+    iosDirectPayment: false,
   },
   {
     name: "WhatsApp Pay",
     logo: "/logos/whatsapp.svg",
     pkg: "com.whatsapp",
-    iosScheme: "whatsapp://",
     iosId: "310633997",
+    iosDirectPayment: false,
   },
 ];
 
@@ -115,11 +122,16 @@ function openAndroid(app: UpiApp, query: string): void {
 function openIOS(app: UpiApp, query: string): void {
   const store = appStoreUrl(app);
 
-  // Apps without a known app-specific scheme use the interoperable UPI URI.
-  // For the named apps in this project, every entry currently has an iOS scheme.
-  const launch = app.iosScheme
-    ? `${app.iosScheme}?${query}`
-    : `upi://pay?${query}`;
+  // Only use a verified/documented web-to-iOS UPI payment scheme.
+  // For apps without one, go to the official App Store listing rather than
+  // sending Safari an unsupported custom URI that can trigger an invalid-address
+  // error or open the app without a payment request.
+  if (!app.iosDirectPayment || !app.iosScheme) {
+    window.location.assign(store);
+    return;
+  }
+
+  const launch = `${app.iosScheme}?${query}`;
 
   let handedOff = false;
 
