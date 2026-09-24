@@ -1,9 +1,9 @@
-// Client-side UPI deep-linking. Opens the exact chosen app with the amount
-// pre-filled, paying to the SpiruPop VPA; falls back to the app store when the
-// app isn't installed. Apps with a public URL scheme use it (reliable across
-// browsers, never grabbed by another UPI handler like WhatsApp); the rest use
-// an Android package intent. A JS timeout is the universal "not installed"
-// safety net so the user never lands on an "address invalid" error.
+// UPI app routing.
+//
+// Android: app-specific intent:// URLs target the selected package.
+// iOS: app-specific UPI URL schemes are used where known; generic upi://pay
+// is used only as the fallback. The merchant VPA is public and contains no secret.
+
 export const UPI_VPA = "spiru.pop@kotak";
 export const UPI_NAME = "SPIRUHOME GLOBAL SOLUTIONS";
 
@@ -11,7 +11,8 @@ export type UpiApp = {
   name: string;
   logo: string;
   pkg: string;
-  scheme?: string; // app's own URL scheme (works on iOS + Android)
+  androidScheme?: string;
+  iosScheme?: string;
   iosId: string;
 };
 
@@ -20,33 +21,38 @@ export const UPI_APPS: UpiApp[] = [
     name: "Google Pay",
     logo: "/logos/googlepay.svg",
     pkg: "com.google.android.apps.nbu.paisa.user",
-    scheme: "tez://upi/pay",
+    androidScheme: "upi",
+    iosScheme: "tez://upi/pay",
     iosId: "1193357041",
   },
   {
     name: "PhonePe",
     logo: "/logos/phonepe.svg",
     pkg: "com.phonepe.app",
-    scheme: "phonepe://pay",
+    androidScheme: "upi",
+    iosScheme: "phonepe://upi/pay",
     iosId: "1170055821",
   },
   {
     name: "Paytm",
     logo: "/logos/paytm.svg",
     pkg: "net.one97.paytm",
-    scheme: "paytmmp://pay",
+    androidScheme: "upi",
+    iosScheme: "paytm://upi/pay",
     iosId: "473941634",
   },
   {
     name: "FamApp",
     logo: "/logos/fampay.svg",
-    pkg: "com.fampay.in",
+    pkg: "in.fampay.app",
+    iosScheme: "in.fampay.app://",
     iosId: "1499806454",
   },
   {
     name: "super.money",
     logo: "/logos/supermoney.svg",
-    pkg: "money.super.payments",
+    pkg: "com.hsb.super",
+    iosScheme: "super://",
     iosId: "6502597504",
   },
   {
@@ -60,64 +66,81 @@ export const UPI_APPS: UpiApp[] = [
 export function upiQuery(amount: number, note: string): string {
   return `pa=${encodeURIComponent(UPI_VPA)}&pn=${encodeURIComponent(
     UPI_NAME
-  )}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+  )}&am=${encodeURIComponent(amount.toFixed(2))}&cu=INR&tn=${encodeURIComponent(note)}`;
 }
 
 export function genericUpiHref(amount: number, note: string): string {
   return `upi://pay?${upiQuery(amount, note)}`;
 }
 
-// Opens the app; if it isn't installed (page still visible after a beat),
-// routes to its store listing to install.
+function isAndroid(): boolean {
+  return typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+}
+
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function openUrl(url: string): void {
+  // Must run directly from the user's tap to satisfy mobile browser gesture
+  // requirements for external-app launches.
+  window.location.assign(url);
+}
+
 export function openUpiApp(app: UpiApp, amount: number, note: string): void {
   const query = upiQuery(amount, note);
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const isAndroid = /android/i.test(ua);
-  const isIOS =
-    /iphone|ipad|ipod/i.test(ua) ||
-    (typeof navigator !== "undefined" &&
-      navigator.platform === "MacIntel" &&
-      navigator.maxTouchPoints > 1);
+  const android = isAndroid();
+  const ios = isIOS();
 
-  // Desktop / unknown: hand off to any UPI handler (or the QR is available).
-  if (!isAndroid && !isIOS) {
-    window.location.href = genericUpiHref(amount, note);
-    return;
-  }
+  // Desktop: don't navigate to a mobile-only URI. The QR remains visible.
+  if (!android && !ios) return;
 
-  const store = isAndroid
-    ? `https://play.google.com/store/apps/details?id=${app.pkg}`
+  const store = android
+    ? `https://play.google.com/store/apps/details?id=${encodeURIComponent(app.pkg)}`
     : `https://apps.apple.com/app/id${app.iosId}`;
 
-  // Build the launch URL that targets THIS app specifically.
   let launch: string;
-  if (app.scheme) {
-    launch = `${app.scheme}?${query}`;
-  } else if (isAndroid) {
-    // No public scheme — target the exact package (never a upi:// chooser, so
-    // it can't be grabbed by WhatsApp Pay).
+
+  if (android) {
+    // Android Chrome understands intent:// and can target one exact package.
     launch = `intent://pay?${query}#Intent;scheme=upi;package=${app.pkg};end`;
+  } else if (app.iosScheme) {
+    // iOS requires the PSP's own URL scheme for deterministic app selection.
+    // Do not use phonepe://pay or paytmmp://pay on iOS; those are the Android
+    // forms and can be rejected by Safari as an invalid address.
+    launch = `${app.iosScheme}?${query}`;
   } else {
-    // iOS without a scheme: can't deep-link — send to install/open page.
-    window.location.href = store;
+    // No known app-specific iOS scheme: never fabricate one.
+    // Send the user to the app's App Store page rather than Safari's
+    // "address is invalid" page.
+    window.location.assign(store);
     return;
   }
 
-  // If the app takes over (page hidden / blurred) we cancel the store fallback.
   let switched = false;
-  const cancel = () => {
+  const markSwitched = () => {
     switched = true;
   };
-  document.addEventListener("visibilitychange", cancel, { once: true });
-  window.addEventListener("pagehide", cancel, { once: true });
-  window.addEventListener("blur", cancel, { once: true });
 
+  document.addEventListener("visibilitychange", markSwitched, { once: true });
+  window.addEventListener("pagehide", markSwitched, { once: true });
+  window.addEventListener("blur", markSwitched, { once: true });
+
+  openUrl(launch);
+
+  // If iOS/Android did not hand the page to an app, give the user a useful
+  // destination instead of leaving a broken custom-scheme URL in Safari.
   window.setTimeout(() => {
-    document.removeEventListener("visibilitychange", cancel);
-    window.removeEventListener("pagehide", cancel);
-    window.removeEventListener("blur", cancel);
-    if (!switched && !document.hidden) window.location.href = store;
-  }, 1400);
+    document.removeEventListener("visibilitychange", markSwitched);
+    window.removeEventListener("pagehide", markSwitched);
+    window.removeEventListener("blur", markSwitched);
 
-  window.location.href = launch;
+    if (!switched && !document.hidden) {
+      window.location.assign(store);
+    }
+  }, 1800);
 }
