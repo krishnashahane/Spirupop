@@ -12,7 +12,6 @@ Checkout uses **direct UPI deep linking**, not Razorpay/Stripe.
 - Order endpoint: `app/api/order/route.ts`
 - UPI configuration: `lib/upi.ts`
 - Desktop fallback QR: `public/payment-qr.png`
-- Payee VPA: `spiru.pop@kotak`
 - Payee name: `SPIRUHOME GLOBAL SOLUTIONS`
 
 ### Deployment independence
@@ -20,7 +19,6 @@ Checkout uses **direct UPI deep linking**, not Razorpay/Stripe.
 The public checkout requires **no database, payment API key, CORS setup, or domain-specific source edit**.
 
 The order endpoint validates the customer details and server-side tier price, generates a customer-facing order reference, and then moves directly to UPI payment.
-
 Optional notification delivery runs in the background and can never prevent checkout.
 
 ## Optional admin dashboard
@@ -46,7 +44,3 @@ npm run dev
 npm run lint
 npm run build
 ```
-
-Health check:
-
-`/api/health`
