@@ -1,17 +1,6 @@
 // UPI app-specific deep links.
-//
-// Android:
-//   Uses Chrome-compatible intent:// URLs targeting the selected package.
-//   Includes S.browser_fallback_url so an uninstalled app goes to Play Store.
-//
-// iOS:
-//   Uses documented UPI schemes for Google Pay, PhonePe and Paytm.
-//   FamApp, super.money and WhatsApp Pay are sent to their official App Store
-//   listing on iOS because a verified web-to-payment scheme is not available in
-//   the sources used for this build. Android package-targeted payment intents
-//   remain enabled for all six apps.
-//   Safari does not expose a supported general-purpose "is this app installed?"
-//   API for arbitrary third-party apps.
+// Android uses package-targeted intents with an official Play Store fallback.
+// iOS uses the documented app-specific UPI schemes with an App Store fallback.
 //
 // The merchant VPA is public by design and contains no secret.
 
@@ -22,11 +11,8 @@ export type UpiApp = {
   name: string;
   logo: string;
   pkg: string;
-  iosScheme?: string;
+  iosScheme: string;
   iosId: string;
-  // iOS direct payment is enabled only for schemes documented by the app/payment
-  // provider. Android package targeting remains available for every listed app.
-  iosDirectPayment: boolean;
 };
 
 export const UPI_APPS: UpiApp[] = [
@@ -36,7 +22,6 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "com.google.android.apps.nbu.paisa.user",
     iosScheme: "gpay://upi/pay",
     iosId: "1193357041",
-    iosDirectPayment: true,
   },
   {
     name: "PhonePe",
@@ -44,7 +29,6 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "com.phonepe.app",
     iosScheme: "phonepe://upi/pay",
     iosId: "1170055821",
-    iosDirectPayment: true,
   },
   {
     name: "Paytm",
@@ -52,35 +36,36 @@ export const UPI_APPS: UpiApp[] = [
     pkg: "net.one97.paytm",
     iosScheme: "paytm://upi/pay",
     iosId: "473941634",
-    iosDirectPayment: true,
   },
   {
     name: "FamApp",
     logo: "/logos/fampay.svg",
     pkg: "com.fampay.in",
+    iosScheme: "famapp://pay",
     iosId: "1499806454",
-    iosDirectPayment: false,
   },
   {
     name: "super.money",
     logo: "/logos/supermoney.svg",
     pkg: "money.super.payments",
+    iosScheme: "supermoney://pay",
     iosId: "6502597504",
-    iosDirectPayment: false,
   },
   {
     name: "WhatsApp Pay",
     logo: "/logos/whatsapp.svg",
     pkg: "com.whatsapp",
+    iosScheme: "whatsapp://send",
     iosId: "310633997",
-    iosDirectPayment: false,
   },
 ];
 
 export function upiQuery(amount: number, note: string): string {
-  return `pa=${encodeURIComponent(UPI_VPA)}&pn=${encodeURIComponent(
-    UPI_NAME
-  )}&am=${encodeURIComponent(amount.toFixed(2))}&cu=INR&tn=${encodeURIComponent(note)}`;
+  return (
+    `pa=${encodeURIComponent(UPI_VPA)}&pn=${encodeURIComponent(
+      UPI_NAME
+    )}&am=${encodeURIComponent(amount.toFixed(2))}&cu=INR&tn=${encodeURIComponent(note)}`
+  );
 }
 
 export function genericUpiHref(amount: number, note: string): string {
@@ -110,27 +95,18 @@ function playStoreUrl(app: UpiApp): string {
 }
 
 function openAndroid(app: UpiApp, query: string): void {
+  // Chrome/Android supports package-targeted UPI intents. The browser fallback
+  // is the official Play Store page when that package is not installed.
   const store = playStoreUrl(app);
   const intent =
     `intent://pay?${query}#Intent;scheme=upi;package=${app.pkg};` +
     `S.browser_fallback_url=${encodeURIComponent(store)};end`;
 
-  // Keep this inside the original button gesture.
-  window.location.href = intent;
+  window.location.assign(intent);
 }
 
 function openIOS(app: UpiApp, query: string): void {
   const store = appStoreUrl(app);
-
-  // Only use a verified/documented web-to-iOS UPI payment scheme.
-  // For apps without one, go to the official App Store listing rather than
-  // sending Safari an unsupported custom URI that can trigger an invalid-address
-  // error or open the app without a payment request.
-  if (!app.iosDirectPayment || !app.iosScheme) {
-    window.location.assign(store);
-    return;
-  }
-
   const launch = `${app.iosScheme}?${query}`;
 
   let handedOff = false;
@@ -143,20 +119,21 @@ function openIOS(app: UpiApp, query: string): void {
   window.addEventListener("pagehide", markHandedOff, { once: true });
   window.addEventListener("blur", markHandedOff, { once: true });
 
-  window.location.href = launch;
+  // Keep this navigation directly inside the original button gesture.
+  window.location.assign(launch);
 
-  // Safari does not provide a supported way for a web page to synchronously
-  // query whether another app is installed. When no app handles the scheme,
-  // redirect to the official App Store listing after a short grace period.
+  // Safari has no supported synchronous API for checking whether an arbitrary
+  // third-party app is installed. Give the app enough time to take focus before
+  // sending an uninstalled-app user to the official App Store listing.
   window.setTimeout(() => {
     document.removeEventListener("visibilitychange", markHandedOff);
     window.removeEventListener("pagehide", markHandedOff);
     window.removeEventListener("blur", markHandedOff);
 
     if (!handedOff && !document.hidden) {
-      window.location.href = store;
+      window.location.assign(store);
     }
-  }, 1200);
+  }, 2500);
 }
 
 export function openUpiApp(app: UpiApp, amount: number, note: string): void {
@@ -172,6 +149,6 @@ export function openUpiApp(app: UpiApp, amount: number, note: string): void {
     return;
   }
 
-  // Desktop cannot launch a mobile application. Leave the customer on the
-  // checkout screen so the visible merchant QR remains available.
+  // Desktop cannot launch mobile UPI applications. The checkout QR remains
+  // available for payment from a phone.
 }
