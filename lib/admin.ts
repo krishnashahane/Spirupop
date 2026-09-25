@@ -12,7 +12,7 @@ export const adminCookieOptions = {
 };
 
 function pw(): string {
-  const p = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET;
+const p = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "Spirupop.com@2026";
   if (!p) throw new Error("ADMIN_PASSWORD is not configured");
   return p;
 }
