@@ -11,10 +11,12 @@ export const adminCookieOptions = {
   maxAge: 60 * 60 * 24 * 7,
 };
 
+// Admin password for /admin. Fixed in code so a stale ADMIN_PASSWORD /
+// ADMIN_SECRET env var on the host can't silently replace it.
+const ADMIN_PASSWORD = "Spirupop.com@2026";
+
 function pw(): string {
-const p = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "Spirupop.com@2026";
-  if (!p) throw new Error("ADMIN_PASSWORD is not configured");
-  return p;
+  return ADMIN_PASSWORD;
 }
 
 export function adminToken(): string {

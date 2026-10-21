@@ -8,9 +8,7 @@ export async function GET() {
   const databaseConfigured = Boolean(
     process.env.DATABASE_URL || process.env.POSTGRES_URL
   );
-  const adminConfigured = Boolean(
-    process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET
-  );
+  const adminConfigured = true;
 
   return NextResponse.json({
     ok: true,
@@ -26,7 +24,7 @@ export async function GET() {
       database:
         "Optional. Needed only for the /admin order-management dashboard.",
       admin:
-        "Optional. Configure ADMIN_PASSWORD or ADMIN_SECRET to enable admin login.",
+        "Admin login is always enabled; the password is set in lib/admin.ts.",
     },
   });
 }
