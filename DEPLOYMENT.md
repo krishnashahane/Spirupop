@@ -49,16 +49,14 @@ Notification delivery is best-effort and never blocks the customer from reaching
 
 ## Optional order dashboard
 
-The `/admin` dashboard uses PostgreSQL.
-
-Configure:
+Admin login at `/admin` works with no configuration; the password is set in
+`lib/admin.ts`. Listing orders on the dashboard uses PostgreSQL:
 
 ```text
 DATABASE_URL=<PostgreSQL connection string>
-ADMIN_PASSWORD=<strong password>
 ```
 
-Without these optional values, public checkout still works. The database is not part of the payment-critical path.
+Without this optional value, public checkout still works. The database is not part of the payment-critical path.
 
 ## Health check
 
@@ -81,4 +79,4 @@ Browser API calls are same-origin. Server-side notification URLs derive the requ
 
 ## External configuration
 
-DNS, HTTPS/TLS, and optional database/admin settings are controlled by the deployment provider. They are not required for the public UPI checkout.
+DNS, HTTPS/TLS, and optional database settings are controlled by the deployment provider. They are not required for the public UPI checkout.

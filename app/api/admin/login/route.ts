@@ -49,7 +49,15 @@ export async function POST(req: Request) {
   }
 
   fails.delete(ip);
+  // Mark the cookie Secure only when served over HTTPS, so login also works
+  // when a fresh clone is run with `npm start` over plain http.
+  const proto =
+    req.headers.get("x-forwarded-proto")?.split(",")[0].trim() ||
+    new URL(req.url).protocol.replace(":", "");
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(ADMIN_COOKIE, adminToken(), adminCookieOptions);
+  res.cookies.set(ADMIN_COOKIE, adminToken(), {
+    ...adminCookieOptions,
+    secure: proto === "https",
+  });
   return res;
 }

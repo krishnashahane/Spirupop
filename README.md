@@ -21,14 +21,16 @@ The public checkout requires **no database, payment API key, CORS setup, or doma
 The order endpoint validates the customer details and server-side tier price, generates a customer-facing order reference, and then moves directly to UPI payment.
 Optional notification delivery runs in the background and can never prevent checkout.
 
-## Optional admin dashboard
+## Admin dashboard
 
-`/admin` can use PostgreSQL for persistent order management.
+Open `/admin` and sign in with the admin password. The password is set in
+`lib/admin.ts` (`ADMIN_PASSWORD`); no environment variable is needed.
+
+Listing orders on `/admin` uses PostgreSQL (optional).
 
 Optional environment variables:
 
 - `DATABASE_URL` or `POSTGRES_URL`
-- `ADMIN_PASSWORD` or `ADMIN_SECRET`
 - `ORDER_ALERT_EMAIL`
 - `WHATSAPP_TO`
 - `WHATSAPP_TOKEN`
@@ -38,9 +40,13 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Development
 
+Requires Node.js 20.9 or newer.
+
 ```bash
+git clone https://github.com/krishnashahane/Spirupop.git
+cd Spirupop
 npm ci
-npm run dev
+npm run dev        # http://localhost:3000  ·  admin: http://localhost:3000/admin
 npm run lint
 npm run build
 ```
