@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { ensureSchema, sqlClient } from "@/lib/db";
 import { tierById } from "@/lib/tiers";
 import { sendOrderAlert } from "@/lib/notify";
 import { SITE_ORIGIN, normalizeOrigin } from "@/lib/site";
@@ -98,7 +99,49 @@ async function handle(req: Request) {
     );
   }
 
-  const orderId = orderReference();
+  // Save the order for the /admin dashboard when a database is configured.
+  // A database failure never blocks checkout; it falls back to a time-based
+  // order reference.
+  let orderId = orderReference();
+  if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
+    try {
+      await ensureSchema();
+      const sql = sqlClient();
+      const ip = clientIp(req);
+
+      const [byPhone, byIp] = await Promise.all([
+        sql`SELECT count(*)::int AS n FROM sp_orders
+            WHERE phone = ${phone} AND created_at > now() - interval '1 hour'`,
+        sql`SELECT count(*)::int AS n FROM sp_orders
+            WHERE ip = ${ip} AND created_at > now() - interval '1 hour'`,
+      ]);
+
+      if ((byPhone[0]?.n ?? 0) >= 8 || (byIp[0]?.n ?? 0) >= 20) {
+        return NextResponse.json(
+          { error: "Too many attempts. Please try again later." },
+          { status: 429 }
+        );
+      }
+
+      const users = await sql`
+        INSERT INTO sp_users (phone, name) VALUES (${phone}, ${name})
+        ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id`;
+
+      const rows = await sql`
+        INSERT INTO sp_orders
+          (user_id, tier_id, item_title, amount, name, phone, address, city, state, pincode, ip)
+        VALUES
+          (${Number(users[0].id)}, ${tier.id}, ${tier.title}, ${tier.price}, ${name}, ${phone},
+           ${address}, ${city}, ${state}, ${pincode}, ${ip})
+        RETURNING id`;
+
+      orderId = Number(rows[0].id);
+    } catch (e) {
+      console.error("order save failed", e);
+    }
+  }
+
   const siteOrigin = requestSiteOrigin(req);
 
   // Notifications are best-effort and can never block checkout/payment.
