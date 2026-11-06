@@ -63,6 +63,27 @@ export default function Navbar() {
             </span>
           </Link>
 
+          <Link
+            href="/account"
+            aria-label="My account and orders"
+            title="My account & orders"
+            className={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
+              pathname === "/account"
+                ? "border-mauve bg-mauve/25 text-ink"
+                : "border-black/10 bg-white/70 text-ink/80 hover:border-black/20 hover:text-ink"
+            }`}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
+              <path
+                d="M4 20c1.5-3.6 4.5-5.5 8-5.5s6.5 1.9 8 5.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+          </Link>
+
           <button
             aria-label="Toggle menu"
             onClick={() => setOpen((v) => !v)}

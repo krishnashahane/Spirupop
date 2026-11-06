@@ -22,9 +22,13 @@ export default function CheckoutModal({
     state: "",
     pincode: "",
   });
-  const [order, setOrder] = useState<{ amount: number; note: string } | null>(
-    null
-  );
+  const [order, setOrder] = useState<{
+    amount: number;
+    note: string;
+    ref: string;
+    trackUrl: string | null;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
@@ -47,6 +51,7 @@ export default function CheckoutModal({
       setStep("details");
       setError(null);
       setOrder(null);
+      setCopied(false);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [tier]);
@@ -86,6 +91,7 @@ export default function CheckoutModal({
     // local reference and take the customer directly to payment.
     let amount = tier.price;
     let orderRef = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let trackUrl: string | null = null;
 
     try {
       const res = await fetch("/api/order", {
@@ -103,6 +109,9 @@ export default function CheckoutModal({
         if (data.orderId != null) {
           orderRef = String(data.orderId);
         }
+        if (typeof data.trackPath === "string" && data.trackPath.startsWith("/track?")) {
+          trackUrl = `${window.location.origin}${data.trackPath}`;
+        }
       } else {
         console.warn("Optional order API unavailable; continuing to UPI payment.", {
           status: res.status,
@@ -116,7 +125,12 @@ export default function CheckoutModal({
     }
 
     setLoading(false);
-    setOrder({ amount, note: `SpiruPop ${tier.title} #${orderRef}` });
+    setOrder({
+      amount,
+      note: `SpiruPop ${tier.title} #${orderRef}`,
+      ref: orderRef,
+      trackUrl,
+    });
     setStep("pay");
   };
 
@@ -309,6 +323,39 @@ export default function CheckoutModal({
                 Order saved. Complete the UPI payment to confirm. SpiruPop never
                 sees your card or bank details.
               </p>
+              {order.trackUrl && (
+                <div className="mt-4 rounded-2xl border border-black/10 bg-gradient-to-r from-mauve/10 to-aqua/10 px-4 py-3 text-left">
+                  <p className="text-xs font-bold text-ink">
+                    Order #{order.ref} · Save your tracking link
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55">
+                    Private link to check your order status anytime. You can also
+                    track it with your order number, mobile and PIN code.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard
+                          ?.writeText(order.trackUrl!)
+                          .then(() => setCopied(true))
+                          .catch(() => {});
+                      }}
+                      className="flex-1 rounded-full border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:border-black/30"
+                    >
+                      {copied ? "Copied ✓" : "Copy link"}
+                    </button>
+                    <a
+                      href={order.trackUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 rounded-full bg-ink px-3 py-2 text-center text-xs font-semibold text-white transition hover:bg-ink/85"
+                    >
+                      Track order
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

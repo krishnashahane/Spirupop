@@ -3,6 +3,11 @@ import { ensureSchema, sqlClient } from "@/lib/db";
 import { tierById } from "@/lib/tiers";
 import { sendOrderAlert } from "@/lib/notify";
 import { SITE_ORIGIN, normalizeOrigin } from "@/lib/site";
+import {
+  currentCustomerId,
+  ensureCustomerSchema,
+  newTrackToken,
+} from "@/lib/customer";
 
 export const runtime = "nodejs";
 
@@ -103,6 +108,7 @@ async function handle(req: Request) {
   // A database failure never blocks checkout; it falls back to a time-based
   // order reference.
   let orderId = orderReference();
+  let trackPath: string | null = null;
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
     try {
       await ensureSchema();
@@ -137,6 +143,20 @@ async function handle(req: Request) {
         RETURNING id`;
 
       orderId = Number(rows[0].id);
+
+      // Link the order to the logged-in customer (if any) and create a
+      // private tracking link. Never blocks checkout.
+      try {
+        await ensureCustomerSchema();
+        const customerId = await currentCustomerId();
+        const track = newTrackToken();
+        await sql`UPDATE sp_orders
+          SET customer_id = ${customerId}, track_hash = ${track.hash}
+          WHERE id = ${orderId}`;
+        trackPath = `/track?id=${orderId}&t=${track.token}`;
+      } catch (e) {
+        console.error("order tracking setup failed", e);
+      }
     } catch (e) {
       console.error("order save failed", e);
     }
@@ -167,5 +187,6 @@ async function handle(req: Request) {
     orderId,
     amount: tier.price,
     title: tier.title,
+    trackPath,
   });
 }
