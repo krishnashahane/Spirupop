@@ -11,27 +11,45 @@ export const adminCookieOptions = {
   maxAge: 60 * 60 * 24 * 7,
 };
 
-// Admin password for /admin. Fixed in code so a stale ADMIN_PASSWORD /
-// ADMIN_SECRET env var on the host can't silently replace it.
-const ADMIN_PASSWORD = "Spirupop.com@2026";
+// Admin password
+const ADMIN_PASSWORD = "Admin@123";
 
 function pw(): string {
   return ADMIN_PASSWORD;
 }
 
+// Generate admin authentication token
 export function adminToken(): string {
-  return crypto.createHmac("sha256", pw()).update("sp-admin-v1").digest("hex");
+  return crypto
+    .createHmac("sha256", pw())
+    .update("sp-admin-v1")
+    .digest("hex");
 }
 
+// Validate admin password
 export function checkPassword(input: string): boolean {
-  const expected = pw();
+  const a = crypto.createHash("sha256").update(input).digest();
+  const b = crypto.createHash("sha256").update(pw()).digest();
 
-  console.log("Received password length:", input.length);
-  console.log("Expected password length:", expected.length);
-  console.log("Password matches:", input === expected);
+  return crypto.timingSafeEqual(a, b);
+}
 
-  return crypto.timingSafeEqual(
-    crypto.createHash("sha256").update(input, "utf8").digest(),
-    crypto.createHash("sha256").update(expected, "utf8").digest()
-  );
+// Verify admin session
+export async function isAdmin(): Promise<boolean> {
+  const jar = await cookies();
+  const cookie = jar.get(ADMIN_COOKIE)?.value;
+
+  if (!cookie) return false;
+
+  try {
+    const a = Buffer.from(cookie);
+    const b = Buffer.from(adminToken());
+
+    return (
+      a.length === b.length &&
+      crypto.timingSafeEqual(a, b)
+    );
+  } catch {
+    return false;
+  }
 }
