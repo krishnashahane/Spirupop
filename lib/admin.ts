@@ -24,20 +24,14 @@ export function adminToken(): string {
 }
 
 export function checkPassword(input: string): boolean {
-  const a = crypto.createHash("sha256").update(input).digest();
-  const b = crypto.createHash("sha256").update(pw()).digest();
-  return crypto.timingSafeEqual(a, b);
-}
+  const expected = pw();
 
-export async function isAdmin(): Promise<boolean> {
-  const jar = await cookies();
-  const c = jar.get(ADMIN_COOKIE)?.value;
-  if (!c) return false;
-  try {
-    const a = Buffer.from(c);
-    const b = Buffer.from(adminToken());
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
+  console.log("Received password length:", input.length);
+  console.log("Expected password length:", expected.length);
+  console.log("Password matches:", input === expected);
+
+  return crypto.timingSafeEqual(
+    crypto.createHash("sha256").update(input, "utf8").digest(),
+    crypto.createHash("sha256").update(expected, "utf8").digest()
+  );
 }
