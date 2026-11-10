@@ -8,6 +8,11 @@ import {
   ensureCustomerSchema,
   newTrackToken,
 } from "@/lib/customer";
+import {
+  createRazorpayOrder,
+  razorpayEnabled,
+  razorpayKeyId,
+} from "@/lib/razorpay";
 
 export const runtime = "nodejs";
 
@@ -89,6 +94,7 @@ async function handle(req: Request) {
   const city = clean(body.city, 60);
   const state = clean(body.state, 60);
   const pincode = clean(body.pincode, 6);
+  const payOnline = razorpayEnabled();
 
   if (
     !PHONE.test(phone) ||
@@ -109,6 +115,7 @@ async function handle(req: Request) {
   // order reference.
   let orderId = orderReference();
   let trackPath: string | null = null;
+  let saved = false;
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
     try {
       await ensureSchema();
@@ -143,6 +150,7 @@ async function handle(req: Request) {
         RETURNING id`;
 
       orderId = Number(rows[0].id);
+      saved = true;
 
       // Link the order to the logged-in customer (if any) and create a
       // private tracking link. Never blocks checkout.
@@ -159,6 +167,37 @@ async function handle(req: Request) {
       }
     } catch (e) {
       console.error("order save failed", e);
+    }
+  }
+
+  // Razorpay order for the exact server-side price. The amount is fixed by
+  // Razorpay and cannot be edited by the customer in their UPI app.
+  let razorpay: { keyId: string; orderId: string; amount: number } | null = null;
+  if (payOnline) {
+    if (!saved) {
+      return NextResponse.json(
+        { error: "We couldn't save your order. Please try again.", razorpayRequired: true },
+        { status: 503 }
+      );
+    }
+    try {
+      const rzpOrder = await createRazorpayOrder(orderId, tier.price);
+      await sqlClient()`UPDATE sp_orders SET rzp_order_id = ${rzpOrder.id}
+        WHERE id = ${orderId}`;
+      razorpay = {
+        keyId: razorpayKeyId(),
+        orderId: rzpOrder.id,
+        amount: rzpOrder.amount,
+      };
+    } catch (e) {
+      console.error("razorpay order create failed", e);
+      return NextResponse.json(
+        {
+          error: "Payment service is busy. Please try again in a moment.",
+          razorpayRequired: true,
+        },
+        { status: 502 }
+      );
     }
   }
 
@@ -188,5 +227,6 @@ async function handle(req: Request) {
     amount: tier.price,
     title: tier.title,
     trackPath,
+    razorpay,
   });
 }

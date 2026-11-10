@@ -45,6 +45,11 @@ export function ensureSchema(): Promise<void> {
     )`;
     // Migrate tables created by an earlier version (CREATE IF NOT EXISTS won't).
     await sql`ALTER TABLE sp_orders ADD COLUMN IF NOT EXISTS ip TEXT`;
+    // Razorpay payment tracking (automatic "paid" status).
+    await sql`ALTER TABLE sp_orders ADD COLUMN IF NOT EXISTS rzp_order_id TEXT`;
+    await sql`ALTER TABLE sp_orders ADD COLUMN IF NOT EXISTS rzp_payment_id TEXT`;
+    await sql`ALTER TABLE sp_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS sp_orders_rzp_order_idx ON sp_orders (rzp_order_id)`;
     await sql`CREATE INDEX IF NOT EXISTS sp_orders_phone_idx ON sp_orders (phone, created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS sp_orders_ip_idx ON sp_orders (ip, created_at)`;
   })().catch((e) => {

@@ -72,11 +72,11 @@ export function genericUpiHref(amount: number, note: string): string {
   return `upi://pay?${upiQuery(amount, note)}`;
 }
 
-function isAndroid(): boolean {
+export function isAndroid(): boolean {
   return typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 }
 
-function isIOS(): boolean {
+export function isIOS(): boolean {
   if (typeof navigator === "undefined") return false;
   return (
     /iphone|ipad|ipod/i.test(navigator.userAgent) ||

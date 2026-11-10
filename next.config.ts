@@ -4,13 +4,14 @@ import type { NextConfig } from "next";
 // endpoint the app actually calls (FormSubmit for the contact form).
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://*.razorpay.com",
   "media-src 'self'",
   "font-src 'self'",
-  "connect-src 'self' https://formsubmit.co",
-  "form-action 'self' https://formsubmit.co",
+  "connect-src 'self' https://formsubmit.co https://*.razorpay.com",
+  "frame-src https://*.razorpay.com",
+  "form-action 'self' https://formsubmit.co https://*.razorpay.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "object-src 'none'",
@@ -31,7 +32,9 @@ const securityHeaders = [
     value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
   },
   { key: "X-DNS-Prefetch-Control", value: "on" },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // Razorpay Checkout opens payment popups (e.g. bank pages) that must be
+  // able to report back to this page.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
 ];
 
 const nextConfig: NextConfig = {

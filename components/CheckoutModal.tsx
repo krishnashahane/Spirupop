@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { inr, type Tier } from "@/lib/tiers";
-import { UPI_APPS, openUpiApp } from "@/lib/upi";
+import { UPI_APPS, openUpiApp, type UpiApp } from "@/lib/upi";
+import {
+  errorText,
+  isPhone,
+  loadRazorpay,
+  razorpayAppCode,
+  type RzpCustom,
+  type RzpStandard,
+  type RzpSuccess,
+} from "@/lib/razorpay-client";
 
 type Step = "details" | "pay";
+type PayState = "idle" | "waiting" | "paid";
+
+type RazorpayInfo = { keyId: string; orderId: string; amount: number };
 
 export default function CheckoutModal({
   tier,
@@ -27,22 +39,40 @@ export default function CheckoutModal({
     note: string;
     ref: string;
     trackUrl: string | null;
+    razorpay: RazorpayInfo | null;
   } | null>(null);
+  const [payState, setPayState] = useState<PayState>("idle");
+  const [rzpReady, setRzpReady] = useState(false);
+  const [phone, setPhone] = useState(false);
+  const rzpRef = useRef<RzpCustom | null>(null);
+  const rzpOrderRef = useRef<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
 
+  const handleClose = useCallback(() => {
+    if (payState === "waiting") {
+      try {
+        rzpRef.current?.emit("payment.cancel");
+      } catch {
+        /* ignore */
+      }
+    }
+    onClose();
+  }, [payState, onClose]);
+
+
   useEffect(() => {
     if (!tier) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && handleClose();
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [tier, onClose]);
+  }, [tier, handleClose]);
 
   useEffect(() => {
     if (tier) {
@@ -52,6 +82,8 @@ export default function CheckoutModal({
       setError(null);
       setOrder(null);
       setCopied(false);
+      setPayState("idle");
+      setPhone(isPhone());
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [tier]);
@@ -59,6 +91,152 @@ export default function CheckoutModal({
   useEffect(() => {
     firstRef.current?.focus();
   }, [step]);
+
+  // ------------------------------------------------------------ Razorpay
+
+  // Confirms on the server (which re-checks with Razorpay) and shows success.
+  const confirmPaid = useCallback(async (resp: RzpSuccess) => {
+    try {
+      const res = await fetch("/api/pay/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resp),
+      });
+      const data = (await res.json().catch(() => ({}))) as { state?: string };
+      if (data.state === "paid") {
+        setPayState("paid");
+        setError(null);
+      }
+      // Otherwise the status poll and the webhook finish the job.
+    } catch {
+      /* status poll continues */
+    }
+  }, []);
+
+  const rzpOrderId = order?.razorpay?.orderId ?? null;
+  const rzpKey = order?.razorpay?.keyId ?? null;
+
+  // Load Razorpay as soon as the payment step opens, so tapping an app can
+  // start the payment instantly inside the same tap.
+  useEffect(() => {
+    rzpOrderRef.current = rzpOrderId;
+    if (step !== "pay" || !rzpKey) return;
+    let alive = true;
+    loadRazorpay()
+      .then((Ctor) => {
+        if (!alive) return;
+        if (isPhone() && !rzpRef.current) {
+          const inst = new Ctor({ key: rzpKey }) as RzpCustom;
+          inst.on("payment.success", (r) => {
+            const resp = r as RzpSuccess;
+            if (resp.razorpay_order_id !== rzpOrderRef.current) return;
+            void confirmPaid(resp);
+          });
+          inst.on("payment.error", (r) => {
+            const { text } = errorText(r);
+            setPayState((s) => (s === "paid" ? s : "idle"));
+            setError(text);
+          });
+          rzpRef.current = inst;
+        }
+        setRzpReady(true);
+      })
+      .catch(() => {
+        if (alive) setError("Couldn't load secure payment. Check your internet and try again.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [step, rzpKey, rzpOrderId, confirmPaid]);
+
+  // While the customer is in their UPI app, ask the server every few seconds.
+  useEffect(() => {
+    if (payState !== "waiting" || !rzpOrderId) return;
+    let stopped = false;
+    const started = Date.now();
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const res = await fetch("/api/pay/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ razorpay_order_id: rzpOrderId }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { state?: string };
+        if (!stopped && data.state === "paid") {
+          setPayState("paid");
+          setError(null);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+      if (!stopped && Date.now() - started < 15 * 60 * 1000) {
+        timer = window.setTimeout(tick, 4000);
+      }
+    };
+    let timer = window.setTimeout(tick, 4000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [payState, rzpOrderId]);
+
+  // Phone: open the chosen UPI app through Razorpay (amount locked).
+  const payWithApp = (app: UpiApp) => {
+    if (!order) return;
+    const rp = order.razorpay;
+    if (!rp) {
+      openUpiApp(app, order.amount, order.note);
+      return;
+    }
+    const code = razorpayAppCode(app);
+    const inst = rzpRef.current;
+    if (!code || !inst) {
+      setError("Secure payment is still loading. Please tap again in a moment.");
+      return;
+    }
+    setError(null);
+    setPayState("waiting");
+    inst.createPayment(
+      {
+        amount: rp.amount,
+        currency: "INR",
+        method: "upi",
+        contact: form.phone,
+        order_id: rp.orderId,
+      },
+      { app: code }
+    );
+  };
+
+  // Computer: Razorpay's own QR for this exact order and amount.
+  const openDesktopQr = async () => {
+    if (!order?.razorpay || !tier) return;
+    const rp = order.razorpay;
+    try {
+      const Ctor = await loadRazorpay();
+      const inst = new Ctor({
+        key: rp.keyId,
+        order_id: rp.orderId,
+        amount: rp.amount,
+        currency: "INR",
+        name: "SpiruPop",
+        description: `${tier.title} · Order #${order.ref}`,
+        prefill: { name: form.name, contact: `+91${form.phone}` },
+        handler: (resp: RzpSuccess) => void confirmPaid(resp),
+        modal: {
+          ondismiss: () => setPayState((s) => (s === "paid" ? s : "idle")),
+        },
+      }) as RzpStandard;
+      inst.on("payment.failed", (r) => setError(errorText(r).text));
+      setError(null);
+      setPayState("waiting");
+      inst.open();
+    } catch {
+      setError("Couldn't load secure payment. Check your internet and try again.");
+    }
+  };
 
   if (!tier) return null;
 
@@ -92,6 +270,7 @@ export default function CheckoutModal({
     let amount = tier.price;
     let orderRef = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     let trackUrl: string | null = null;
+    let razorpay: RazorpayInfo | null = null;
 
     try {
       const res = await fetch("/api/order", {
@@ -112,7 +291,23 @@ export default function CheckoutModal({
         if (typeof data.trackPath === "string" && data.trackPath.startsWith("/track?")) {
           trackUrl = `${window.location.origin}${data.trackPath}`;
         }
+        const rp = data.razorpay as Partial<RazorpayInfo> | null | undefined;
+        if (
+          rp &&
+          typeof rp.keyId === "string" &&
+          typeof rp.orderId === "string" &&
+          Number.isFinite(Number(rp.amount))
+        ) {
+          razorpay = { keyId: rp.keyId, orderId: rp.orderId, amount: Number(rp.amount) };
+        }
       } else {
+        // With Razorpay enabled the order MUST be saved first, otherwise the
+        // payment could never be matched to it. Show the server's message.
+        if (data.razorpayRequired === true && typeof data.error === "string") {
+          setLoading(false);
+          setError(data.error);
+          return;
+        }
         console.warn("Optional order API unavailable; continuing to UPI payment.", {
           status: res.status,
         });
@@ -130,6 +325,7 @@ export default function CheckoutModal({
       note: `SpiruPop ${tier.title} #${orderRef}`,
       ref: orderRef,
       trackUrl,
+      razorpay,
     });
     setStep("pay");
   };
@@ -146,7 +342,7 @@ export default function CheckoutModal({
     >
       <button
         aria-label="Close checkout"
-        onClick={onClose}
+        onClick={handleClose}
         className="absolute inset-0 h-full w-full cursor-default bg-black/60 backdrop-blur-sm"
       />
       <div className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
@@ -164,7 +360,7 @@ export default function CheckoutModal({
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close"
             className="rounded-full p-1.5 text-ink/50 transition hover:bg-black/5 hover:text-ink"
           >
@@ -270,59 +466,168 @@ export default function CheckoutModal({
           {/* STEP 2 — pay */}
           {step === "pay" && order && (
             <div className="text-center">
-              <div className="flex items-end justify-center gap-2">
-                <span className="font-display text-3xl font-extrabold">
-                  {inr(order.amount)}
-                </span>
-                <span className="mb-1 text-sm font-medium text-ink/50">
-                  payable
-                </span>
-              </div>
-              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.15em] text-ink/45">
-                Pay with
-              </p>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
-                {UPI_APPS.map((app) => (
-                  <button
-                    key={app.name}
-                    type="button"
-                    onClick={() => openUpiApp(app, order.amount, order.note)}
-                    className="flex items-center gap-2.5 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-left text-sm font-semibold text-ink transition hover:border-black/20 hover:shadow-sm"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={app.logo}
-                      alt=""
-                      width={22}
-                      height={22}
-                      className="h-[22px] w-[22px] shrink-0 object-contain"
-                      aria-hidden
-                    />
-                    {app.name}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-3 text-[11px] leading-relaxed text-ink/45">
-                Opens the app with the amount pre-filled. Not installed? We&apos;ll
-                take you to install it.
-              </p>
-              <div className="mt-4 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink/35">
-                <span className="h-px flex-1 bg-black/10" />
-                On a computer? Scan
-                <span className="h-px flex-1 bg-black/10" />
-              </div>
-              <div className="mx-auto mt-3 w-32 rounded-2xl border border-black/10 bg-white p-2.5 shadow-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/payment-qr.png"
-                  alt={`Scan to pay ${inr(order.amount)}`}
-                  className="h-auto w-full rounded-lg"
-                />
-              </div>
-              <p className="mt-4 text-[11px] leading-relaxed text-ink/45">
-                Order saved. Complete the UPI payment to confirm. SpiruPop never
-                sees your card or bank details.
-              </p>
+              {payState === "paid" ? (
+                <div className="rounded-2xl bg-emerald-50 px-4 py-5">
+                  <p className="text-3xl" aria-hidden>
+                    ✓
+                  </p>
+                  <p className="mt-1 font-display text-xl font-extrabold text-emerald-700">
+                    Payment received
+                  </p>
+                  <p className="mt-1 text-sm text-ink/60">
+                    {inr(order.amount)} paid for Order #{order.ref}. We&apos;ll
+                    ship it soon.
+                  </p>
+                </div>
+              ) : !order.razorpay ? (
+                <>
+                <div className="flex items-end justify-center gap-2">
+                  <span className="font-display text-3xl font-extrabold">
+                    {inr(order.amount)}
+                  </span>
+                  <span className="mb-1 text-sm font-medium text-ink/50">
+                    payable
+                  </span>
+                </div>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.15em] text-ink/45">
+                  Pay with
+                </p>
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                  {UPI_APPS.map((app) => (
+                    <button
+                      key={app.name}
+                      type="button"
+                      onClick={() => payWithApp(app)}
+                      className="flex items-center gap-2.5 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-left text-sm font-semibold text-ink transition hover:border-black/20 hover:shadow-sm"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={app.logo}
+                        alt=""
+                        width={22}
+                        height={22}
+                        className="h-[22px] w-[22px] shrink-0 object-contain"
+                        aria-hidden
+                      />
+                      {app.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-ink/45">
+                  Opens the app with the amount pre-filled. Not installed? We&apos;ll
+                  take you to install it.
+                </p>
+                <div className="mt-4 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink/35">
+                  <span className="h-px flex-1 bg-black/10" />
+                  On a computer? Scan
+                  <span className="h-px flex-1 bg-black/10" />
+                </div>
+                <div className="mx-auto mt-3 w-32 rounded-2xl border border-black/10 bg-white p-2.5 shadow-sm">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/payment-qr.png"
+                    alt={`Scan to pay ${inr(order.amount)}`}
+                    className="h-auto w-full rounded-lg"
+                  />
+                </div>
+                <p className="mt-4 text-[11px] leading-relaxed text-ink/45">
+                  Order saved. Complete the UPI payment to confirm. SpiruPop never
+                  sees your card or bank details.
+                </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-end justify-center gap-2">
+                    <span className="font-display text-3xl font-extrabold">
+                      {inr(order.amount)}
+                    </span>
+                    <span className="mb-1 text-sm font-medium text-ink/50">
+                      payable
+                    </span>
+                  </div>
+                  {phone && payState === "waiting" ? (
+                    <div className="mt-4 rounded-2xl border border-black/10 px-4 py-5">
+                      <span className="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-mauve border-t-transparent" />
+                      <p className="mt-3 text-sm font-semibold text-ink">
+                        Complete the payment in your UPI app
+                      </p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-ink/50">
+                        This page updates automatically once your payment is
+                        confirmed.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            rzpRef.current?.emit("payment.cancel");
+                          } catch {
+                            /* ignore */
+                          }
+                          setPayState("idle");
+                        }}
+                        className="mt-3 rounded-full border border-black/15 px-4 py-2 text-xs font-semibold text-ink transition hover:border-black/30"
+                      >
+                        Choose another app
+                      </button>
+                    </div>
+                  ) : phone ? (
+                    <>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.15em] text-ink/45">
+                        Pay with
+                      </p>
+                      <div className="mt-2.5 grid grid-cols-2 gap-2">
+                        {UPI_APPS.filter((app) => razorpayAppCode(app) !== null).map(
+                          (app) => (
+                            <button
+                              key={app.name}
+                              type="button"
+                              disabled={!rzpReady}
+                              onClick={() => payWithApp(app)}
+                              className="flex items-center gap-2.5 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-left text-sm font-semibold text-ink transition hover:border-black/20 hover:shadow-sm disabled:opacity-50"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={app.logo}
+                                alt=""
+                                width={22}
+                                height={22}
+                                className="h-[22px] w-[22px] shrink-0 object-contain"
+                                aria-hidden
+                              />
+                              {app.name}
+                            </button>
+                          )
+                        )}
+                      </div>
+                      <p className="mt-3 text-[11px] leading-relaxed text-ink/45">
+                        {rzpReady
+                          ? "Opens the app with the amount pre-filled."
+                          : "Loading secure payment…"}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mt-4 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink/35">
+                        <span className="h-px flex-1 bg-black/10" />
+                        On a computer? Scan
+                        <span className="h-px flex-1 bg-black/10" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openDesktopQr}
+                        disabled={!rzpReady}
+                        className="btn-primary mt-3 w-full rounded-full bg-gradient-to-r from-mauve to-aqua px-6 py-3.5 text-sm font-bold text-[#111111] hover:brightness-95 disabled:opacity-60"
+                      >
+                        {rzpReady ? "Show payment QR" : "Loading secure payment…"}
+                      </button>
+                    </>
+                  )}
+                  <p className="mt-4 text-[11px] leading-relaxed text-ink/45">
+                    Order saved. Complete the UPI payment to confirm. SpiruPop never
+                    sees your card or bank details.
+                  </p>
+                </>
+              )}
               {order.trackUrl && (
                 <div className="mt-4 rounded-2xl border border-black/10 bg-gradient-to-r from-mauve/10 to-aqua/10 px-4 py-3 text-left">
                   <p className="text-xs font-bold text-ink">
