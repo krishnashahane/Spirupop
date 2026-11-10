@@ -39,9 +39,7 @@ yarn-error.log*
 .vercel
 .vercelignore
 
-# claude / agent tooling
-.claude
-CLAUDE.md
+# agent tooling
 AGENTS.md
 
 # typescript
