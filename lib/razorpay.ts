@@ -41,7 +41,6 @@ async function rzp<T>(path: string, init?: RequestInit): Promise<T> {
       "Content-Type": "application/json",
       ...(init?.headers || {}),
     },
-    cache: "no-store",
     signal: AbortSignal.timeout(15000),
   });
   const data = (await res.json().catch(() => ({}))) as T & {
